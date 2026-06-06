@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GEMSPIRE — a real-time match-duel prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Spectral:ital,wght@0,400;0,600;1,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0b14; --bg2:#10101f; --panel:#161527; --panel2:#1d1b33;
+    --ink:#ece8ff; --dim:#9a96bd; --gold:#e3c277; --gold-deep:#b8923f;
+    --line:#2c2a45;
+    --attack:#e2415c; --attack-glow:#ff6d84;
+    --block:#4488f0;  --block-glow:#6ea6ff;
+    --skill:#2ecf81;  --skill-glow:#57f5a8;
+    --power:#b15cf0;  --power-glow:#cb88ff;
+    --enemy:#e2415c; --hp:#56d486;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1100px 600px at 50% -10%, #241f44 0%, transparent 55%),
+      radial-gradient(800px 500px at 50% 110%, #1a2740 0%, transparent 60%),
+      var(--bg);
+    color:var(--ink); font-family:'Spectral',Georgia,serif;
+    height:100dvh; min-height:100dvh; display:flex; justify-content:center; align-items:stretch;
+    padding:8px; overflow:hidden;
+  }
+  body::before{ /* grain */
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.04; z-index:99;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  #app{width:100%; max-width:540px; height:100%; max-height:100%; display:flex; flex-direction:column; gap:8px; position:relative; min-height:0}
+
+  .title{ text-align:center; font-family:'Cinzel',serif; letter-spacing:.2em;
+    font-weight:900; font-size:13px; color:var(--gold); flex:0 0 auto;
+    text-shadow:0 0 18px rgba(227,194,119,.35);}
+  .title small{display:none}
+
+  .frame{ background:linear-gradient(180deg,var(--panel),var(--bg2));
+    border:1px solid var(--line); border-radius:14px; box-shadow:0 10px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.04);}
+
+  /* ENEMY */
+  #enemy{padding:10px 13px; position:relative; overflow:hidden; flex:0 0 auto}
+  #enemy.hurt{animation:shake .3s}
+  .ehead{display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:6px}
+  .ename{font-family:'Cinzel'; font-weight:700; letter-spacing:.1em; font-size:12px; color:#ffd9df}
+  .ehp-num{font-family:'Cinzel'; font-weight:900; font-size:23px; line-height:1; color:#fff;
+    text-shadow:0 0 14px rgba(255,109,132,.5); font-variant-numeric:tabular-nums}
+  .ehp-num span{font-size:13px; color:var(--dim); font-weight:500; margin-left:1px; text-shadow:none}
+  .hpbar{position:relative; height:16px; border-radius:9px; background:#241a22; overflow:hidden;
+    border:1px solid #00000066; box-shadow:inset 0 2px 5px #00000066}
+  .hpbar i{position:absolute; left:0; top:0; height:100%; border-radius:9px}
+  .hpbar .trail{background:#8a2636; transition:width .55s ease .14s; width:100%}
+  .hpbar .fill{background:linear-gradient(90deg,#ff6d84,#e2415c); transition:width .22s ease;
+    width:100%; box-shadow:0 0 10px #e2415c88}
+
+  /* generic bar (player) */
+  .bar{height:13px; border-radius:8px; background:#241f2c; overflow:hidden; border:1px solid #00000055; position:relative}
+  .bar > i{display:block; height:100%; border-radius:8px; transition:width .25s ease}
+  .barwrap{display:flex; align-items:center; gap:8px}
+  .num{font-size:11px; color:var(--dim); min-width:46px; text-align:right; font-variant-numeric:tabular-nums}
+
+  /* threat / intent */
+  .threat{margin-top:8px; padding:7px 10px; border-radius:10px; background:#00000033;
+    border:1px solid var(--line); transition:box-shadow .2s, border-color .2s}
+  .threat.imminent{border-color:var(--attack); box-shadow:0 0 0 1px var(--attack), 0 0 22px rgba(226,65,92,.4); animation:imminent .7s infinite}
+  @keyframes imminent{50%{box-shadow:0 0 0 1px var(--attack), 0 0 30px rgba(226,65,92,.65)}}
+  .threat-top{display:flex; align-items:center; justify-content:space-between}
+  .threat-label{font-size:10px; letter-spacing:.22em; color:var(--dim); font-weight:600}
+  .threat-dmg{font-family:'Cinzel'; font-weight:900; font-size:19px; color:#ffb1bc}
+  .threat-dmg.heavy{color:#fff; text-shadow:0 0 14px #ff8a3d}
+  .threat-dmg .tag{font-size:9px; letter-spacing:.14em; background:#ff8a3d; color:#1a1426;
+    padding:2px 5px; border-radius:5px; vertical-align:middle; margin-left:5px; font-family:'Spectral'; font-weight:600}
+  .chargebar{height:7px; border-radius:5px; background:#1a1622; overflow:hidden; margin-top:7px; border:1px solid #00000055}
+  .chargebar i{display:block; height:100%; border-radius:5px; width:0%;
+    background:linear-gradient(90deg,var(--gold-deep),var(--gold)); transition:width .1s linear}
+  .threat.imminent .chargebar i{background:linear-gradient(90deg,#e2415c,#ff8a3d)}
+  .threat-preview{margin-top:6px; font-size:11.5px; color:#ff9aa9; font-style:italic}
+  .threat-preview b{font-family:'Cinzel'; font-style:normal; font-size:13px; color:#ff6d84}
+  .threat-preview.safe{color:var(--block-glow)}
+
+  /* BOARD */
+  #boardFrame{flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; padding:8px}
+  #board{aspect-ratio:1/1; height:100%; max-height:100%; max-width:100%; width:auto;
+    display:grid; grid-template-columns:repeat(6,1fr); grid-template-rows:repeat(6,1fr); gap:6px}
+  .tile{position:relative; border-radius:10px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:transform .22s cubic-bezier(.34,1.4,.5,1), box-shadow .15s;
+    will-change:transform; user-select:none; -webkit-tap-highlight-color:transparent; touch-action:none;}
+  .tile .sym{font-size:16px; opacity:.32; color:#000; mix-blend-mode:overlay; font-weight:900}
+  .tile.attack{background:radial-gradient(circle at 35% 30%,var(--attack-glow),var(--attack) 70%); box-shadow:inset 0 -3px 8px #00000055, 0 0 0 1px #ffffff10}
+  .tile.block {background:radial-gradient(circle at 35% 30%,var(--block-glow),var(--block) 70%); box-shadow:inset 0 -3px 8px #00000055, 0 0 0 1px #ffffff10}
+  .tile.skill {background:radial-gradient(circle at 35% 30%,var(--skill-glow),var(--skill) 70%); box-shadow:inset 0 -3px 8px #00000055, 0 0 0 1px #ffffff10}
+  .tile.power {background:radial-gradient(circle at 35% 30%,var(--power-glow),var(--power) 70%); box-shadow:inset 0 -3px 8px #00000055, 0 0 0 1px #ffffff10}
+  .tile.sel{transform:scale(.86); box-shadow:0 0 0 3px var(--gold), 0 0 18px var(--gold)}
+  .tile.pop{animation:pop .19s ease forwards}
+  @keyframes pop{60%{transform:scale(1.25); filter:brightness(1.8)} 100%{transform:scale(0); opacity:0}}
+
+  /* MIDDLE STATS */
+  #mid{display:flex; gap:10px; align-items:stretch; flex:0 0 auto}
+  #player{flex:1; padding:9px 12px}
+  .pname{font-family:'Cinzel'; font-weight:700; letter-spacing:.1em; font-size:11px; color:var(--ink)}
+  .stat{display:flex; align-items:center; gap:7px; margin-top:5px; font-size:12px}
+  .stat .ic{width:16px; text-align:center}
+  .blockpip{font-family:'Cinzel'; font-weight:700; color:var(--block-glow); font-size:14px}
+  #player.hurt{animation:shake .3s}
+
+  #energy{width:120px; padding:8px; display:grid; grid-template-columns:1fr 1fr; gap:6px}
+  .orb{display:flex; align-items:center; gap:6px; padding:5px 7px; border-radius:9px; background:#00000035; border:1px solid var(--line)}
+  .orb .dot{width:13px; height:13px; border-radius:50%; box-shadow:0 0 8px currentColor}
+  .orb.attack .dot{background:var(--attack); color:var(--attack-glow)}
+  .orb.block .dot{background:var(--block); color:var(--block-glow)}
+  .orb.skill .dot{background:var(--skill); color:var(--skill-glow)}
+  .orb.power .dot{background:var(--power); color:var(--power-glow)}
+  .orb .v{font-family:'Cinzel'; font-weight:700; font-size:15px; font-variant-numeric:tabular-nums}
+  .orb.gain{animation:gain .4s ease}
+  @keyframes gain{0%{transform:scale(1)}40%{transform:scale(1.22); filter:brightness(1.5)}100%{transform:scale(1)}}
+
+  /* HAND */
+  #hand{display:grid; grid-template-columns:repeat(5,1fr); gap:7px; flex:0 0 auto}
+  .card{background:linear-gradient(180deg,#1f1d38,#15132a); border:1px solid var(--line);
+    border-radius:10px; padding:7px 4px 8px; cursor:pointer; text-align:center; position:relative;
+    transition:transform .12s, box-shadow .15s, border-color .15s; overflow:hidden}
+  .card::before{content:""; position:absolute; inset:0 0 auto 0; height:3px; background:var(--c)}
+  .card .cn{font-family:'Cinzel'; font-weight:700; font-size:10px; letter-spacing:.01em; margin-top:3px; color:#fff; line-height:1.1; min-height:22px; display:flex; align-items:center; justify-content:center}
+  .card .cd{font-size:9px; color:var(--dim); line-height:1.2; margin-top:2px; min-height:22px; font-style:italic}
+  .card .cost{display:flex; gap:3px; justify-content:center; margin-top:4px}
+  .card .pip{width:10px; height:10px; border-radius:50%; background:var(--c); box-shadow:0 0 6px var(--c)}
+  .card.ok:hover{transform:translateY(-5px); border-color:var(--gold); box-shadow:0 8px 22px rgba(0,0,0,.5)}
+  .card.no{opacity:.4; filter:saturate(.4); cursor:not-allowed}
+  .card.cast{animation:cast .35s ease}
+  .card.deny{animation:deny .3s}
+  @keyframes cast{50%{transform:translateY(-12px) scale(1.06); box-shadow:0 0 26px var(--gold)}}
+  @keyframes deny{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+
+  @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+
+  /* status fx */
+  #boardFrame{position:relative}
+  #fxchip{position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:5;
+    font-family:'Cinzel'; font-weight:700; font-size:11px; letter-spacing:.05em;
+    padding:5px 12px; border-radius:20px; color:#fff; pointer-events:none; white-space:nowrap;
+    background:rgba(20,16,30,.88); border:1px solid var(--attack); box-shadow:0 0 16px rgba(226,65,92,.5);
+    animation:fxpulse 1s infinite}
+  @keyframes fxpulse{50%{box-shadow:0 0 26px rgba(226,65,92,.9)}}
+  .tile.stone2,.tile.stone1{cursor:default;
+    background:radial-gradient(circle at 38% 30%,#736b80,#383442 72%);
+    box-shadow:inset 0 -3px 8px #00000077, inset 0 2px 4px #ffffff14, 0 0 0 1px #ffffff0d}
+  .tile.stone1{background:radial-gradient(circle at 38% 30%,#8d8598,#4a4555 72%)}
+  .tile.stone2 .sym,.tile.stone1 .sym{opacity:.6; color:#15121d; mix-blend-mode:normal}
+  .tile.crack{animation:crackpop .28s ease}
+  @keyframes crackpop{0%{transform:scale(1)}40%{transform:scale(1.13) rotate(-3deg); filter:brightness(1.7)}100%{transform:scale(1)}}
+  .card.taxed{border-color:var(--attack); box-shadow:inset 0 0 14px rgba(226,65,92,.2)}
+  .card.taxed .pip{box-shadow:0 0 7px var(--attack)}
+  .threat-dmg.special{color:#fff; text-shadow:0 0 13px var(--power-glow)}
+  .threat-dmg.special .tag{background:var(--power); color:#fff}
+  .threat-dmg.stone .tag{background:#8d8598; color:#15121d}
+  .threat-preview.stone{color:#cfc8da} .threat-preview.stone b{color:#fff; font-family:'Cinzel'; font-style:normal}
+  .threat-preview.pow{color:var(--power-glow)} .threat-preview.pow b{color:#fff; font-family:'Cinzel'; font-style:normal}
+
+  /* floating text */
+  .float{position:fixed; font-family:'Cinzel'; font-weight:900; pointer-events:none; z-index:50;
+    animation:rise 1s ease forwards; text-shadow:0 2px 6px #000; font-size:20px}
+  @keyframes rise{0%{opacity:0; transform:translateY(6px) scale(.7)}20%{opacity:1}100%{opacity:0; transform:translateY(-34px) scale(1.1)}}
+
+  /* overlay */
+  #ov{position:absolute; inset:0; background:rgba(7,7,16,.93); border-radius:14px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    z-index:60; padding:20px; backdrop-filter:blur(3px); overflow:auto}
+  #ov h1{font-family:'Cinzel'; font-weight:900; letter-spacing:.16em; font-size:24px; color:var(--gold); text-shadow:0 0 24px rgba(227,194,119,.4)}
+  #ov p{color:var(--dim); margin-top:12px; line-height:1.55; font-size:13px; max-width:380px}
+  #ov p b{color:var(--ink); font-weight:600}
+  .legend{display:flex; gap:14px; margin:16px 0 4px; flex-wrap:wrap; justify-content:center; font-size:11px}
+  .legend span{display:flex; align-items:center; gap:5px; color:var(--dim)}
+  .legend i{width:13px;height:13px;border-radius:50%; display:inline-block}
+  .btn{margin-top:18px; font-family:'Cinzel'; font-weight:700; letter-spacing:.14em; font-size:13px;
+    color:#1a1426; background:linear-gradient(180deg,var(--gold),var(--gold-deep)); border:none;
+    padding:13px 30px; border-radius:10px; cursor:pointer; box-shadow:0 6px 22px rgba(227,194,119,.3);
+    transition:transform .12s}
+  .btn:hover{transform:translateY(-2px)}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="title">GEMSPIRE<small>match to fuel — cast in real time — the foe will not wait</small></div>
+
+  <div class="frame" id="enemy">
+    <div class="ehead">
+      <span class="ename" id="ename">The Hollow Warden</span>
+      <span class="ehp-num"><b id="ehpnum">70</b><span id="ehpcap"> / 70</span></span>
+    </div>
+    <div class="hpbar"><i class="trail" id="ehptrail"></i><i class="fill" id="ehp"></i></div>
+    <div class="threat" id="threat">
+      <div class="threat-top">
+        <span class="threat-label">INCOMING</span>
+        <span class="threat-dmg" id="intent">⚔ 9</span>
+      </div>
+      <div class="chargebar"><i id="echarge"></i></div>
+      <div class="threat-preview" id="preview">You take <b>9</b></div>
+    </div>
+  </div>
+
+  <div class="frame" id="boardFrame"><div id="fxchip" class="hidden"></div><div id="board"></div></div>
+
+  <div id="mid">
+    <div class="frame" id="player">
+      <div class="pname">You</div>
+      <div class="stat"><span class="ic" style="color:var(--hp)">♥</span>
+        <div class="bar hp" style="flex:1; height:11px"><i id="php" style="width:100%; background:linear-gradient(90deg,#6ff0a0,#56d486)"></i></div>
+        <span class="num" id="phpnum">50 / 50</span></div>
+      <div class="stat"><span class="ic" style="color:var(--block-glow)">🛡</span>
+        <span style="color:var(--dim)">Block</span>
+        <span class="blockpip" id="block">0</span></div>
+    </div>
+    <div class="frame" id="energy">
+      <div class="orb attack" id="orb-attack"><span class="dot"></span><span class="v" id="e-attack">0</span></div>
+      <div class="orb block"  id="orb-block"><span class="dot"></span><span class="v" id="e-block">0</span></div>
+      <div class="orb skill"  id="orb-skill"><span class="dot"></span><span class="v" id="e-skill">0</span></div>
+      <div class="orb power"  id="orb-power"><span class="dot"></span><span class="v" id="e-power">0</span></div>
+    </div>
+  </div>
+
+  <div id="hand"></div>
+
+  <div id="ov" class="frame">
+    <h1 id="ov-title">GEMSPIRE</h1>
+    <p id="ov-text">
+      Swipe a gem toward a neighbour (or tap two) to make lines of <b>3 or more</b>. Each match banks
+      <b>colored energy</b>. Spend energy on the cards below to <b>strike</b> or <b>defend</b>.<br><br>
+      Two foes await, each with its own trick: the <b>Gravelock</b> turns gems to <b>stone</b> (match beside a stone to crack it), and the <b>Tithe-Collector</b> can <b>double your card costs</b>. Watch the <b>INCOMING</b> bar — it tells you what’s coming and when. Match fast, think faster.
+      <div class="legend">
+        <span><i style="background:var(--attack)"></i>Attack</span>
+        <span><i style="background:var(--block)"></i>Block</span>
+        <span><i style="background:var(--skill)"></i>Skill</span>
+        <span><i style="background:var(--power)"></i>Power</span>
+      </div>
+    </p>
+    <button class="btn" id="startbtn">BEGIN DUEL</button>
+  </div>
+</div>
+
+<script>
+const SIZE=6;
+const COLORS=['attack','block','skill','power'];
+const SYM={attack:'\u25C6',block:'\u25C9',skill:'\u25B2',power:'\u2726'};
+const rc=()=>COLORS[Math.random()*4|0];
+const $=s=>document.querySelector(s);
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const isStone=v=>typeof v==='string'&&v[0]==='s';
+
+let board=[], tiles=[], selected=null, busy=false, playing=false, raf=null, last=0;
+let energy={attack:0,block:0,skill:0,power:0};
+const CAP=12;
+let player={hp:50,max:50,block:0};
+let tax={mult:1,until:0}, lastTax=1;
+let curFoe=0, mode='intro', drag=null;
+let enemy={};
+
+const ENEMIES=[
+  { name:'The Gravelock', hp:62, accent:'#cfc8da',
+    blurb:'A lumbering golem that turns your board to stone. Match beside a stone to crack it \u2014 twice to shatter it back into a gem.',
+    pattern:[
+      {kind:'strike',  dmg:8,  time:7000},
+      {kind:'petrify', dmg:0,  time:6500, n:3},
+      {kind:'strike',  dmg:8,  time:7000},
+      {kind:'strike',  dmg:12, time:7600},
+      {kind:'petrify', dmg:0,  time:6500, n:4},
+    ]},
+  { name:'The Tithe-Collector', hp:78, accent:'#cb88ff',
+    blurb:'A greedy wraith that taxes your magic. During a Tithe every card costs double \u2014 bank energy before it lands, or burst it down fast.',
+    pattern:[
+      {kind:'strike', dmg:9,  time:6800},
+      {kind:'tax',    dmg:4,  time:6200, mult:2, dur:5000},
+      {kind:'strike', dmg:9,  time:6800},
+      {kind:'strike', dmg:13, time:7400},
+      {kind:'tax',    dmg:5,  time:6000, mult:2, dur:7500},
+    ]},
+];
+
+const CARDS=[
+  {name:'Cinderstrike', color:'attack', cost:2, desc:'Deal 8', fx:()=>{ damageEnemy(8); }},
+  {name:'Aegis',        color:'block',  cost:2, desc:'Block 10', fx:()=>{ player.block+=10; floatAt($('#player'),'+10 \uD83D\uDEE1','var(--block-glow)'); }},
+  {name:'Mend',         color:'skill',  cost:2, desc:'Heal 9', fx:()=>{ player.hp=Math.min(player.max,player.hp+9); floatAt($('#player'),'+9 \u2665','var(--hp)'); }},
+  {name:'Rupture',      color:'attack', cost:4, desc:'Deal 16', fx:()=>{ damageEnemy(16); }},
+  {name:'Cataclysm',    color:'power',  cost:3, desc:'Blow up the top color', fx:cataclysm},
+];
+
+/* ---------- board ---------- */
+function buildBoard(){
+  const el=$('#board'); el.innerHTML=''; tiles=[];
+  for(let r=0;r<SIZE;r++){tiles.push([]);
+    for(let c=0;c<SIZE;c++){
+      const t=document.createElement('div'); t.className='tile';
+      const s=document.createElement('span'); s.className='sym'; t.appendChild(s);
+      t.addEventListener('pointerdown',(e)=>onPointerDown(r,c,e));
+      el.appendChild(t); tiles[r].push(t);
+    }}
+}
+function genBoard(){
+  board=[]; for(let r=0;r<SIZE;r++){board.push([]); for(let c=0;c<SIZE;c++) board[r].push(rc());}
+  let g=0; while(findMatches().size>0 && g++<80){ collapse(findMatches()); }
+  if(!hasMove()) return genBoard();
+}
+function findMatches(){
+  const m=new Set();
+  for(let r=0;r<SIZE;r++){let run=1;
+    for(let c=1;c<=SIZE;c++){
+      const same = c<SIZE && !isStone(board[r][c]) && board[r][c]===board[r][c-1];
+      if(same) run++; else { if(run>=3) for(let k=1;k<=run;k++){ const cc=c-k; if(!isStone(board[r][cc])) m.add(r+','+cc); } run=1; }
+    }}
+  for(let c=0;c<SIZE;c++){let run=1;
+    for(let r=1;r<=SIZE;r++){
+      const same = r<SIZE && !isStone(board[r][c]) && board[r][c]===board[r-1][c];
+      if(same) run++; else { if(run>=3) for(let k=1;k<=run;k++){ const rr=r-k; if(!isStone(board[rr][c])) m.add(rr+','+c); } run=1; }
+    }}
+  return m;
+}
+function collapse(cleared){
+  const fall={};
+  for(let c=0;c<SIZE;c++){let write=SIZE-1;
+    for(let r=SIZE-1;r>=0;r--){ if(!cleared.has(r+','+c)){ if(write!==r){ board[write][c]=board[r][c]; fall[write+','+c]=write-r; } write--; } }
+    const n=write+1; for(let r=write;r>=0;r--){ board[r][c]=rc(); fall[r+','+c]=n+1; }}
+  return fall;
+}
+function swapCells(a,b){const t=board[a.r][a.c]; board[a.r][a.c]=board[b.r][b.c]; board[b.r][b.c]=t;}
+function hasMove(){
+  for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++){
+    if(c<SIZE-1 && !isStone(board[r][c]) && !isStone(board[r][c+1])){swapCells({r,c},{r,c:c+1}); const ok=findMatches().size>0; swapCells({r,c},{r,c:c+1}); if(ok)return true;}
+    if(r<SIZE-1 && !isStone(board[r][c]) && !isStone(board[r+1][c])){swapCells({r,c},{r:r+1,c}); const ok=findMatches().size>0; swapCells({r,c},{r:r+1,c}); if(ok)return true;}
+  } return false;
+}
+function reshuffleColors(){
+  let tries=0;
+  do{
+    for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++) if(!isStone(board[r][c])) board[r][c]=rc();
+    let g=0; while(findMatches().size>0 && g++<80){ collapse(findMatches()); }
+  } while(!hasMove() && tries++<40);
+}
+function renderBoard(fall){
+  const r0=tiles[0][0].getBoundingClientRect();
+  const step=(tiles[1][0].getBoundingClientRect().top - r0.top) || (r0.height+6);
+  for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++){
+    const t=tiles[r][c], v=board[r][c];
+    t.className='tile '+v;
+    t.querySelector('.sym').textContent = SYM[v] || (v==='stone1'?'\u2715':'\u25C8');
+    const f = fall && fall[r+','+c];
+    if(f){ t.style.transition='none'; t.style.transform='translateY('+(-f*step)+'px)';
+      requestAnimationFrame(()=>{ t.style.transition=''; t.style.transform=''; }); }
+  }
+}
+function crackAround(cleared){
+  const cr=new Set();
+  cleared.forEach(k=>{ const p=k.split(',').map(Number), r=p[0], c=p[1];
+    [[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(d=>{ const nr=d[0],nc=d[1];
+      if(nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE && isStone(board[nr][nc])) cr.add(nr+','+nc); }); });
+  cr.forEach(k=>{ const p=k.split(',').map(Number), r=p[0], c=p[1];
+    board[r][c] = board[r][c]==='stone2' ? 'stone1' : rc();
+    const t=tiles[r][c]; t.classList.remove('crack'); void t.offsetWidth; t.classList.add('crack'); });
+}
+
+/* ---------- interaction ---------- */
+function adjacent(a,b){return Math.abs(a.r-b.r)+Math.abs(a.c-b.c)===1;}
+function clearSel(){ if(selected){ tiles[selected.r][selected.c].classList.remove('sel'); selected=null; } }
+async function doSwap(a,b){
+  if(busy||!playing) return;
+  if(isStone(board[a.r][a.c])||isStone(board[b.r][b.c])) return;
+  busy=true; swapCells(a,b); renderBoard(); await wait(150);
+  if(findMatches().size>0){ await resolve(); }
+  else { swapCells(a,b); renderBoard(); await wait(150); }
+  busy=false;
+}
+function onTileTap(r,c){
+  if(busy||!playing||isStone(board[r][c])) return;
+  if(!selected){ selected={r,c}; tiles[r][c].classList.add('sel'); return; }
+  const prev=selected; tiles[prev.r][prev.c].classList.remove('sel');
+  if(prev.r===r&&prev.c===c){ selected=null; return; }
+  if(!adjacent(prev,{r,c})){ selected={r,c}; tiles[r][c].classList.add('sel'); return; }
+  selected=null; doSwap(prev,{r,c});
+}
+function onPointerDown(r,c,e){
+  if(busy||!playing||isStone(board[r][c])) return;
+  const h=tiles[0][0].getBoundingClientRect().height;
+  drag={r,c,x:e.clientX,y:e.clientY,thresh:Math.max(14,h*0.34),swiped:false};
+}
+function onPointerMove(e){
+  if(!drag||drag.swiped||busy||!playing) return;
+  const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+  if(Math.abs(dx)<drag.thresh && Math.abs(dy)<drag.thresh) return;
+  let tr=drag.r, tc=drag.c;
+  if(Math.abs(dx)>Math.abs(dy)) tc+= dx>0?1:-1; else tr+= dy>0?1:-1;
+  drag.swiped=true; clearSel();
+  if(tr<0||tr>=SIZE||tc<0||tc>=SIZE) return;
+  if(isStone(board[tr][tc])) return;
+  doSwap({r:drag.r,c:drag.c},{r:tr,c:tc});
+}
+function onPointerUp(){ if(drag && !drag.swiped) onTileTap(drag.r,drag.c); drag=null; }
+
+async function resolve(){
+  let combo=0;
+  while(true){
+    const m=findMatches(); if(m.size===0) break; combo++;
+    const tally={};
+    m.forEach(k=>{ const p=k.split(',').map(Number); const col=board[p[0]][p[1]]; tally[col]=(tally[col]||0)+1; tiles[p[0]][p[1]].classList.add('pop'); });
+    for(const col in tally) addEnergy(col, tally[col]);
+    crackAround(m);
+    if(combo>1){ const t=tiles[0][3].getBoundingClientRect(); floatXY(t.left,t.top,'COMBO x'+combo,'var(--gold)'); }
+    await wait(190);
+    const fall=collapse(m); renderBoard(fall); await wait(230);
+  }
+  if(!hasMove()){ floatAt($('#board'),'\u27F3 reshuffle','var(--dim)'); reshuffleColors(); renderBoard(); }
+}
+
+/* ---------- energy & cards ---------- */
+function addEnergy(col,n){ energy[col]=Math.min(CAP,energy[col]+n);
+  const orb=$('#orb-'+col); orb.classList.remove('gain'); void orb.offsetWidth; orb.classList.add('gain'); updateEnergy(); }
+function updateEnergy(){ COLORS.forEach(c=>$('#e-'+c).textContent=energy[c]); refreshCards(); }
+function taxActive(){ return performance.now()<tax.until ? tax.mult : 1; }
+function effCost(card){ return card.cost*taxActive(); }
+function renderHand(){
+  const h=$('#hand'); h.innerHTML='';
+  CARDS.forEach((card,i)=>{
+    const el=document.createElement('div'); el.className='card'; el.style.setProperty('--c','var(--'+card.color+')');
+    el.innerHTML='<div class="cn">'+card.name+'</div><div class="cd">'+card.desc+'</div><div class="cost"></div>';
+    el.addEventListener('click',()=>playCard(i,el));
+    h.appendChild(el); card.el=el;
+  });
+  applyCostDisplay(); refreshCards();
+}
+function applyCostDisplay(){
+  const m=taxActive();
+  CARDS.forEach(card=>{ if(!card.el) return;
+    card.el.querySelector('.cost').innerHTML=Array(card.cost*m).fill('<span class="pip"></span>').join('');
+    card.el.classList.toggle('taxed', m>1); });
+}
+function refreshCards(){
+  CARDS.forEach(card=>{ if(!card.el) return; const ok=energy[card.color]>=effCost(card) && playing;
+    card.el.classList.toggle('ok',ok); card.el.classList.toggle('no',!ok); });
+}
+function playCard(i,el){
+  if(!playing) return; const card=CARDS[i]; const cost=effCost(card);
+  if(energy[card.color]<cost){ el.classList.remove('deny'); void el.offsetWidth; el.classList.add('deny'); return; }
+  energy[card.color]-=cost; el.classList.remove('cast'); void el.offsetWidth; el.classList.add('cast');
+  card.fx(); updateEnergy(); render();
+}
+function damageEnemy(n){ enemy.hp=Math.max(0,enemy.hp-n); const e=$('#enemy'); e.classList.remove('hurt'); void e.offsetWidth; e.classList.add('hurt');
+  floatAt(e,'-'+n,'var(--attack-glow)'); render(); if(enemy.hp<=0) defeatEnemy(); }
+async function cataclysm(){
+  if(busy) return; busy=true;
+  const count={attack:0,block:0,skill:0,power:0};
+  for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++){ const v=board[r][c]; if(!isStone(v)) count[v]++; }
+  let best='attack'; for(const c in count) if(count[c]>count[best]) best=c;
+  const cleared=new Set();
+  for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++) if(board[r][c]===best){ cleared.add(r+','+c); tiles[r][c].classList.add('pop'); }
+  const n=cleared.size; addEnergy(best,n); damageEnemy(n); crackAround(cleared);
+  await wait(200); const fall=collapse(cleared); renderBoard(fall); await wait(240);
+  await resolve(); busy=false;
+}
+
+/* ---------- enemy ---------- */
+function loadFoe(i){
+  const d=ENEMIES[i];
+  enemy={def:d, name:d.name, hp:d.hp, max:d.hp, charge:0, idx:-1, chargeTime:5000, cur:null};
+  $('#ename').textContent=d.name; $('#ename').style.color=d.accent;
+  advanceIntent();
+}
+function advanceIntent(){
+  const d=enemy.def; enemy.idx=(enemy.idx+1)%d.pattern.length; enemy.cur=d.pattern[enemy.idx];
+  enemy.chargeTime=enemy.cur.time; enemy.charge=0; renderIntent();
+}
+function renderIntent(){
+  const k=enemy.cur, el=$('#intent'); el.className='threat-dmg';
+  if(k.kind==='strike'){ el.innerHTML='\u2694 '+k.dmg + (k.dmg>=12?' <span class="tag">HEAVY</span>':''); if(k.dmg>=12) el.classList.add('heavy'); }
+  else if(k.kind==='petrify'){ el.classList.add('special','stone'); el.innerHTML='PETRIFY <span class="tag">\u00D7'+k.n+'</span>'; }
+  else if(k.kind==='tax'){ el.classList.add('special'); el.innerHTML='TITHE <span class="tag">\u00D7'+k.mult+'</span>'; }
+}
+function applyHit(dmg){
+  if(dmg<=0) return;
+  const dealt=Math.max(0,dmg-player.block), absorbed=dmg-dealt;
+  player.block=Math.max(0,player.block-dmg);
+  if(absorbed>0) floatAt($('#player'),'blocked '+absorbed,'var(--block-glow)');
+  if(dealt>0){ player.hp=Math.max(0,player.hp-dealt); const p=$('#player'); p.classList.remove('hurt'); void p.offsetWidth; p.classList.add('hurt'); floatAt(p,'-'+dealt,'var(--attack-glow)'); }
+}
+function setTax(mult,dur){ tax.mult=mult; tax.until=performance.now()+dur; }
+function petrify(n){
+  const cells=[];
+  for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++) if(!isStone(board[r][c])) cells.push([r,c]);
+  for(let i=cells.length-1;i>0;i--){ const j=Math.random()*(i+1)|0; const t=cells[i]; cells[i]=cells[j]; cells[j]=t; }
+  const k=Math.min(n,cells.length);
+  for(let i=0;i<k;i++){ board[cells[i][0]][cells[i][1]]='stone2'; }
+  renderBoard();
+  for(let i=0;i<k;i++){ const t=tiles[cells[i][0]][cells[i][1]]; t.classList.add('crack'); }
+  floatAt($('#board'),'PETRIFY','#cfc8da');
+  if(!hasMove()) reshuffleColors();
+}
+function enemyAct(){
+  const k=enemy.cur; applyHit(k.dmg||0);
+  if(k.kind==='petrify') petrify(k.n);
+  if(k.kind==='tax'){ setTax(k.mult,k.dur); floatAt($('#hand'),'TITHE \u00D7'+k.mult,'var(--power-glow)'); applyCostDisplay(); }
+  if(player.hp<=0){ render(); end(false); return; }
+  advanceIntent(); render();
+}
+function updateThreat(){
+  const pct=Math.min(100, enemy.charge/enemy.chargeTime*100);
+  $('#echarge').style.width=pct+'%';
+  $('#threat').classList.toggle('imminent', pct>70);
+  const k=enemy.cur, p=$('#preview');
+  if(k.kind==='strike'){ const inc=Math.max(0,k.dmg-player.block);
+    if(inc<=0){ p.className='threat-preview safe'; p.textContent='\u25CF Fully blocked'; }
+    else { p.className='threat-preview'; p.innerHTML='You take <b>'+inc+'</b>'+(player.block>0?' \u00B7 Block '+player.block:''); } }
+  else if(k.kind==='petrify'){ p.className='threat-preview stone'; p.innerHTML='Turns <b>'+k.n+'</b> gems to stone'; }
+  else if(k.kind==='tax'){ p.className='threat-preview pow'; p.innerHTML='Cards cost <b>\u00D7'+k.mult+'</b> for '+(k.dur/1000)+'s'; }
+}
+function updateFx(){
+  const m=taxActive(), chip=$('#fxchip');
+  if(m>1){ const rem=Math.max(0,Math.ceil((tax.until-performance.now())/1000)); chip.classList.remove('hidden'); chip.textContent='\u26A0 TAX \u00D7'+m+' \u00B7 '+rem+'s'; }
+  else chip.classList.add('hidden');
+  if(m!==lastTax){ lastTax=m; applyCostDisplay(); refreshCards(); }
+}
+function loop(ts){
+  if(!playing) return; const dt=ts-last; last=ts; enemy.charge+=dt;
+  if(enemy.charge>=enemy.chargeTime){ enemyAct(); }
+  if(playing){ updateThreat(); updateFx(); raf=requestAnimationFrame(loop); }
+}
+
+/* ---------- render ---------- */
+function render(){
+  const ep=(enemy.hp/enemy.max*100)+'%';
+  $('#ehp').style.width=ep; $('#ehptrail').style.width=ep;
+  $('#ehpnum').textContent=enemy.hp; $('#ehpcap').textContent=' / '+enemy.max;
+  $('#php').style.width=(player.hp/player.max*100)+'%'; $('#phpnum').textContent=player.hp+' / '+player.max;
+  $('#block').textContent=player.block;
+  COLORS.forEach(c=>$('#e-'+c).textContent=energy[c]);
+  if(enemy.cur) updateThreat();
+  refreshCards();
+}
+function floatAt(el,txt,color){ const r=el.getBoundingClientRect(); floatXY(r.left+r.width/2, r.top+12, txt, color); }
+function floatXY(x,y,txt,color){ const f=document.createElement('div'); f.className='float'; f.textContent=txt; f.style.color=color;
+  f.style.left=x+'px'; f.style.top=y+'px'; document.body.appendChild(f); setTimeout(()=>f.remove(),1000); }
+
+/* ---------- flow ---------- */
+function startRun(){
+  curFoe=0; energy={attack:0,block:0,skill:0,power:0}; player={hp:50,max:50,block:0}; tax={mult:1,until:0}; lastTax=1;
+  selected=null; busy=false;
+  genBoard(); loadFoe(0); renderBoard(); applyCostDisplay(); render();
+  $('#ov').classList.add('hidden'); mode='play'; playing=true; last=performance.now(); raf=requestAnimationFrame(loop);
+}
+function resumeNextFoe(){
+  tax={mult:1,until:0}; lastTax=1; selected=null; busy=false;
+  genBoard(); loadFoe(curFoe); renderBoard(); applyCostDisplay(); render();
+  $('#ov').classList.add('hidden'); mode='play'; playing=true; last=performance.now(); raf=requestAnimationFrame(loop);
+}
+function defeatEnemy(){
+  curFoe++;
+  if(curFoe>=ENEMIES.length){ end(true); return; }
+  playing=false; cancelAnimationFrame(raf); mode='next';
+  const nx=ENEMIES[curFoe];
+  $('#ov-title').textContent='FOE FELLED'; $('#ov-title').style.color='var(--gold)';
+  $('#ov-text').innerHTML='Your HP and banked energy carry over.<br><br>Next: <b>'+nx.name+'</b><br><br><i>'+nx.blurb+'</i>';
+  $('#startbtn').textContent='FACE '+nx.name.toUpperCase();
+  $('#ov').classList.remove('hidden');
+}
+function end(win){
+  playing=false; cancelAnimationFrame(raf); mode='over';
+  $('#ov-title').textContent= win?'VICTORY':'DEFEATED'; $('#ov-title').style.color= win?'var(--gold)':'var(--attack)';
+  $('#ov-text').innerHTML= win
+    ? 'Both foes lie broken at your feet.<br><br>You cracked the Gravelock\u2019s stone and bought low before the Tithe-Collector doubled your costs \u2014 the core loop, now with <b>status pressure</b> layered on. Which enemy felt better to fight?'
+    : 'You fall.<br><br>vs the <b>Gravelock</b>: match beside stone to crack it (twice to break it).<br>vs the <b>Tithe-Collector</b>: bank energy <i>before</i> the Tithe \u2014 mid-tithe every card costs double.';
+  $('#startbtn').textContent= win?'NEW RUN':'TRY AGAIN';
+  $('#ov').classList.remove('hidden');
+}
+
+buildBoard(); renderHand();
+$('#startbtn').addEventListener('click',()=>{ if(mode==='next') resumeNextFoe(); else startRun(); });
+window.addEventListener('pointermove',onPointerMove);
+window.addEventListener('pointerup',onPointerUp);
+window.addEventListener('pointercancel',()=>{ drag=null; });
+window.addEventListener('resize',()=>{ if(board.length) renderBoard(); });
+
+</script>
+</body>
+</html>
